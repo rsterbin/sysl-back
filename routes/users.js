@@ -1,42 +1,77 @@
 var express = require('express');
 var router = express.Router();
-var { pgAdapter } = require('../lib/pgAdapter.js');
+var postgres = require('../lib/pgAdapter.js');
+var prmUsers = require('../lib/prmUsers.js');
 
 /* GET users listing. */
-router.get('/', function(req, res, next) {
+router.get('/', async (req, res, next) => {
 
-    const dbh = pgAdapter();
-    const queryText = 'SELECT * from pronouns';
-    dbh.query(queryText)
-        .then((response) => {
-            console.log(response);
-            dbh.end();
-            var buffer = '<ul>';
-            for (var i = 0; i < response.rows.length; ++i) {
-                var row = response.rows[i];
-                var num = i + 1;
-                buffer += '<li>Row #' + num + '<ul>';
-                for (var k in row) {
-                    buffer += '<li>' + k + ': ' + row[k] + '</li>';
-                }
-                buffer += '</ul></li>';
-            }
-            res.send(buffer);
-        })
-        .catch((err) => {
-            console.log(err);
-            dbh.end();
-            res.send('There was an error: ' + err);
-        });
+    // Connect
+    const client = await postgres.connect();
+
+    // Fetch the users
+    const fetUsrs = await prmUsers.fetchUsers(client);
+    if (fetUsrs.users) {
+        res.json({ data: fetUsrs.users });
+    } else {
+        res.status(500).json({ error: 'Internal server error happened: ' + fetUsrs.error });
+    }
 
 });
 
 /* POST users create */
-router.post('/', function(req, res, next) {
+router.post('/', async (req, res, next) => {
     console.log(req.body);
-  // TODO: Set up this endpoint to create a user
 
-  res.send('post to create a user');
+    // Check email
+    if (!req.body.email) {
+        res.status(400).json({ error: 'Email is required' });
+        return;
+    }
+
+    // TODO: validate email
+
+    // Stuff that needs to catch errors
+    try {
+
+        // Connect
+        const client = await postgres.connect();
+
+        // Check pronouns
+        var pronouns_id = null;
+        if (req.body.pronouns_id) {
+            const verProId = await prmUsers.verifyPronounsId(client, req.body.pronouns_id);
+            if (!verProId.pronouns_id) {
+                client.release();
+                res.status(verProId.status).json({ error: 'Pronoun ID "' + req.body.pronouns_id + '" not found: ' + verProId.error });
+                return;
+            } else {
+                pronouns_id = verProId.pronouns_id;
+            }
+        } else if (req.body.pronouns) {
+            const verPros = await prmUsers.lookupPronounsId(client, req.body.pronouns);
+            if (!verPros.pronouns_id) {
+                client.release();
+                res.status(verPros.status).json({ error: 'Pronouns "' + req.body.pronouns + '" not found: ' + verPros.error });
+                return;
+            } else {
+                pronouns_id = verPros.pronouns_id;
+            }
+        }
+        req.body.pronouns_id = pronouns_id;
+
+        // Run the insert and return the new ID
+        const insUser = await prmUsers.insertUser(client, req.body);
+        if (insUser.user_id) {
+            res.json({ data: insUser.user_id });
+        } else {
+            res.status(500).json({ error: 'Internal server error happened: ' + insUser.error });
+        }
+
+    } catch (e) {
+        next(e);
+    }
+
 });
 
 module.exports = router;
