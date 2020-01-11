@@ -1,7 +1,10 @@
-var express = require('express');
-var router = express.Router();
-var postgres = require('../lib/pgAdapter.js');
-var prmUsers = require('../lib/prmUsers.js');
+const express = require('express');
+const validator = require('validator');
+
+const postgres = require('../lib/pgAdapter.js');
+const prmUsers = require('../lib/prmUsers.js');
+
+const router = express.Router();
 
 /* GET users listing. */
 router.get('/', async (req, res, next) => {
@@ -29,7 +32,11 @@ router.post('/', async (req, res, next) => {
         return;
     }
 
-    // TODO: validate email
+    // Validate email
+    if (!validator.isEmail(req.body.email)) {
+        res.status(400).json({ error: 'Email "' + req.body.email + '" is invalid' });
+        return;
+    }
 
     // Stuff that needs to catch errors
     try {
